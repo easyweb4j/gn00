@@ -1,0 +1,5 @@
+plugins {
+  id 'java-library'
+}
+
+apply from: 'https://raw.githubusercontent.com/easyweb4j/gradle-gallery/master/basic-java.gradle'
