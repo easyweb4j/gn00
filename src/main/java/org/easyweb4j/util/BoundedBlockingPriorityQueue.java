@@ -1,7 +1,10 @@
 package org.easyweb4j.util;
 
+import java.util.ArrayList;
 import java.util.Collection;
+import java.util.Comparator;
 import java.util.Iterator;
+import java.util.LinkedList;
 import java.util.NoSuchElementException;
 import java.util.PriorityQueue;
 import java.util.concurrent.BlockingQueue;
@@ -47,12 +50,23 @@ public class BoundedBlockingPriorityQueue<E> implements BlockingQueue<E> {
 
   public BoundedBlockingPriorityQueue(int capacity) {
     this.capacity = capacity;
-    this.size = 0;
     this.queue = new PriorityQueue<>(capacity);
+    init();
+  }
+
+  public BoundedBlockingPriorityQueue(int capacity, Comparator<E> comparator) {
+    this.capacity = capacity;
+    this.queue = new PriorityQueue<>(capacity, comparator);
+    init();
+  }
+
+  private void init() {
+    this.size = 0;
     this.lock = new StampedLock();
     this.conditionLock = new ReentrantLock();
     this.notEmptyCondition = this.conditionLock.newCondition();
     this.notFullCondition = this.conditionLock.newCondition();
+
   }
 
 
@@ -198,12 +212,12 @@ public class BoundedBlockingPriorityQueue<E> implements BlockingQueue<E> {
 
     try {
       size++;
-      queue.offer(e);
+      boolean offer = queue.offer(e);
       signalNotEmpty();
+      return offer;
     } finally {
       lock.unlockWrite(stamp);
     }
-    return false;
   }
 
   @Override
@@ -307,62 +321,203 @@ public class BoundedBlockingPriorityQueue<E> implements BlockingQueue<E> {
 
   @Override
   public boolean addAll(Collection<? extends E> c) {
-    return false;
+    if (null == c) {
+      throw new NullPointerException();
+    }
+
+    return opsThenWrite(
+      () -> {
+        if ((c.size() + size) > capacity) {
+          throw new IllegalStateException();
+        }
+        return new OptimisticReadSupplierResult<>(true, false);
+      },
+      () -> {
+        size += c.size();
+        boolean b = queue.addAll(c);
+
+        signalNotEmpty();
+        return b;
+      }
+    );
   }
 
   @Override
   public boolean removeAll(Collection<?> c) {
-    return false;
+    if (null == c) {
+      throw new NullPointerException();
+    }
+
+    int removeSize = 0;
+    long stamp = lock.writeLock();
+
+    try {
+      Iterator<?> iterator = c.iterator();
+      while (iterator.hasNext()) {
+        Object next = iterator.next();
+        if (queue.contains(next)) {
+          removeSize++;
+        }
+      }
+
+      boolean b = queue.removeAll(c);
+      size -= removeSize;
+      if (0 < removeSize) {
+        signalNotFull();
+      }
+      return b;
+    } finally {
+      lock.unlockWrite(stamp);
+    }
   }
 
   @Override
   public boolean retainAll(Collection<?> c) {
-    return false;
+    if (null == c) {
+      throw new NullPointerException();
+    }
+
+    long stamp = lock.writeLock();
+    LinkedList<Object> removeList = new LinkedList<>();
+
+    try {
+      Iterator<?> iterator = queue.iterator();
+      while (iterator.hasNext()) {
+        Object next = iterator.next();
+        if (!c.contains(next)) {
+          removeList.add(next);
+        }
+      }
+
+      if (0 < removeList.size()) {
+        boolean b = queue.removeAll(removeList);
+        size -= removeList.size();
+        signalNotFull();
+        return b;
+      }
+
+      return false;
+    } finally {
+      lock.unlockWrite(stamp);
+    }
   }
 
   @Override
   public void clear() {
-
+    long stamp = lock.writeLock();
+    try {
+      queue.clear();
+      size = 0;
+      signalNotFull();
+    } finally {
+      lock.unlockWrite(stamp);
+    }
   }
 
   @Override
   public int size() {
-    return 0;
+    long stamp = lock.readLock();
+    try {
+      return queue.size();
+    } finally {
+      lock.unlockRead(stamp);
+    }
   }
 
   @Override
   public boolean isEmpty() {
-    return false;
+    long stamp = lock.readLock();
+    try {
+      return queue.isEmpty();
+    } finally {
+      lock.unlockRead(stamp);
+    }
   }
 
   @Override
   public boolean contains(Object o) {
-    return false;
+    long stamp = lock.readLock();
+    try {
+      return queue.contains(o);
+    } finally {
+      lock.unlockRead(stamp);
+    }
   }
 
   @Override
   public Iterator<E> iterator() {
-    return null;
+    Object[] arr = toArray();
+
+    ArrayList<E> list = new ArrayList<>(arr.length);
+    for (Object o : arr) {
+      list.add((E) o);
+    }
+    return list.iterator();
   }
 
   @Override
   public Object[] toArray() {
-    return new Object[0];
+    long stamp = lock.readLock();
+    try {
+      return queue.toArray();
+    } finally {
+      lock.unlockRead(stamp);
+    }
   }
 
   @Override
   public <T> T[] toArray(T[] a) {
-    return null;
+    long stamp = lock.readLock();
+    try {
+      return queue.toArray(a);
+    } finally {
+      lock.unlockRead(stamp);
+    }
   }
 
   @Override
   public int drainTo(Collection<? super E> c) {
-    return 0;
+    if (null == c) {
+      throw new NullPointerException();
+    }
+
+    long stamp = lock.writeLock();
+
+    try {
+      c.addAll(queue);
+      int qSize = size;
+      queue.clear();
+      size = 0;
+      signalNotFull();
+      return qSize;
+    } finally {
+      lock.unlockWrite(stamp);
+    }
   }
 
   @Override
   public int drainTo(Collection<? super E> c, int maxElements) {
-    return 0;
+    if (null == c) {
+      throw new NullPointerException();
+    }
+
+    long stamp = lock.writeLock();
+
+    try {
+      int qSize = 0;
+      Iterator<E> iterator = queue.iterator();
+      while (iterator.hasNext() && qSize <= maxElements) {
+        c.add(queue.poll());
+        qSize++;
+      }
+
+      size -= qSize;
+
+      signalNotFull();
+      return qSize;
+    } finally {
+      lock.unlockWrite(stamp);
+    }
   }
 
   private <T extends Object> T opsThenWrite(Supplier<OptimisticReadSupplierResult<T>> opsJob,

@@ -4,6 +4,7 @@ import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
+import org.easyweb4j.util.BoundedBlockingPriorityQueue;
 
 /**
  * 限制的线程池，对线程池的大小，队列可灵活限制，线程优先级，线程名称可根据线程自定义
@@ -85,6 +86,43 @@ public abstract class BoundedExecutors {
       60,
       TimeUnit.SECONDS,
       "bounded-pool",
+      Thread.NORM_PRIORITY
+    );
+  }
+
+  public static final ExecutorService newBoundedPriorityExecutorService(
+    int maximumQueueSize,
+    int corePoolSize,
+    int maximumPoolSize,
+    long keepAliveTime,
+    TimeUnit unit,
+    String threadGroupNamePrefix,
+    int threadPriority
+  ) {
+    ThreadPoolExecutor threadPoolExecutor = new ThreadPoolExecutor(
+      corePoolSize,
+      maximumPoolSize,
+      keepAliveTime,
+      unit,
+      new BoundedBlockingPriorityQueue<>(maximumQueueSize),
+      new DefaultExecutorThreadFactory(threadGroupNamePrefix, threadPriority)
+    );
+
+    threadPoolExecutor.prestartAllCoreThreads();
+    return threadPoolExecutor;
+  }
+
+  public static final ExecutorService newBoundedPriorityExecutorService(
+    int maximumQueueSize,
+    int poolSize
+  ) {
+    return newBoundedExecutorService(
+      maximumQueueSize,
+      poolSize,
+      poolSize,
+      60,
+      TimeUnit.SECONDS,
+      "bounded-priority-pool",
       Thread.NORM_PRIORITY
     );
   }

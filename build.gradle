@@ -3,3 +3,13 @@ plugins {
 }
 
 apply from: 'https://raw.githubusercontent.com/easyweb4j/gradle-gallery/master/basic-java.gradle'
+
+ext {
+  logbackVersion = '1.2.3'
+}
+
+dependencies {
+  // https://mvnrepository.com/artifact/ch.qos.logback/logback-classic
+  testCompile group: 'ch.qos.logback', name: 'logback-classic', version: ${logbackVersion}
+
+}
