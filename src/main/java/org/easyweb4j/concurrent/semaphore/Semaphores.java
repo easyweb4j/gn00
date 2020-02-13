@@ -1,6 +1,5 @@
 package org.easyweb4j.concurrent.semaphore;
 
-import java.time.temporal.TemporalAmount;
 import org.easyweb4j.concurrent.semaphore.impl.TimeRateSemaphore;
 
 /**
@@ -19,7 +18,7 @@ public abstract class Semaphores {
     return new TimeRateSemaphore(permits);
   }
 
-  public static final RateSemaphore newRateSemaphore(int permits, TemporalAmount timeAmount) {
-    return new TimeRateSemaphore(permits, timeAmount);
+  public static final RateSemaphore newRateSemaphore(int permits, String rateAmount) {
+    return new TimeRateSemaphore(permits, rateAmount);
   }
 }

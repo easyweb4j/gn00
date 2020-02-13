@@ -7,7 +7,7 @@ package org.easyweb4j.concurrent.semaphore;
  * @date 2020/02/12
  * @since 1.0
  */
-public interface RateSemaphore {
+public interface RateSemaphore extends AutoCloseable{
 
   /**
    * 阻塞式的获取信号量

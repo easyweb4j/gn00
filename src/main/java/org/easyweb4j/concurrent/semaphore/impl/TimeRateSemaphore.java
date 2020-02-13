@@ -1,11 +1,14 @@
 package org.easyweb4j.concurrent.semaphore.impl;
 
 import java.time.Duration;
-import java.time.LocalDateTime;
-import java.time.temporal.TemporalAmount;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.Semaphore;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.locks.StampedLock;
 import org.easyweb4j.concurrent.semaphore.RateSemaphore;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /**
  * 时间相关的速率信号量,支持秒级，分钟级，小时级，日级别, 周级别，自然月级别，自然年级别
@@ -16,15 +19,84 @@ import org.easyweb4j.concurrent.semaphore.RateSemaphore;
  */
 public class TimeRateSemaphore implements RateSemaphore {
 
-  private LocalDateTime resetThreshold;
-  private StampedLock resetMSLock;
+  private static final Logger LOGGER = LoggerFactory.getLogger(TimeRateSemaphore.class);
+
+  private static class ReleaseSemaphore implements Runnable {
+
+    private StampedLock hasBgThreadStartedLock = new StampedLock();
+    private boolean hasBgThreadStarted = false;
+    private volatile boolean isClose = false;
+    private TimeRateSemaphore timeRateSemaphore;
+
+    public ReleaseSemaphore(TimeRateSemaphore timeRateSemaphore) {
+      this.timeRateSemaphore = timeRateSemaphore;
+    }
+
+    @Override
+    public void run() {
+      LOGGER.debug("bg release thread start");
+      if (isClose) {
+        LOGGER.debug("bg release thread die of close");
+        return;
+      }
+
+      long stamp = hasBgThreadStartedLock.writeLock();
+      try {
+        if (!timeRateSemaphore.hasSemaphoreRequireLastPeriod()) {
+          hasBgThreadStarted = false;
+          LOGGER.debug("bg release thread die of idle");
+          return;
+        }
+
+        // schedule again
+        timeRateSemaphore.startSchedule();
+        hasBgThreadStarted = true;
+      } finally {
+        hasBgThreadStartedLock.unlockWrite(stamp);
+
+        timeRateSemaphore.resetInternalSemaphore();
+      }
+
+    }
+
+    void close() {
+      isClose = true;
+    }
+
+    void startBgReleaseThreadIfRequire() {
+      long stamp = hasBgThreadStartedLock.tryOptimisticRead();
+      if (hasBgThreadStarted) {
+        return;
+      }
+
+      long wstamp = hasBgThreadStartedLock.tryConvertToWriteLock(stamp);
+      if (0 != wstamp) {
+        stamp = wstamp;
+      } else {
+        return;
+      }
+
+      LOGGER.debug("require schedule");
+      try {
+        timeRateSemaphore.startSchedule();
+        hasBgThreadStarted = true;
+      } finally {
+        hasBgThreadStartedLock.unlockWrite(stamp);
+
+      }
+
+    }
+  }
+
   private Semaphore internalSemaphore;
 
   private int maxPermits;
-  private TemporalAmount rateAmount;
+  private Duration rateAmount;
+  private ScheduledExecutorService executorService;
+  private ReleaseSemaphore releaseSemaphore;
 
-  public TimeRateSemaphore(int maxPermits, TemporalAmount rateAmount) {
-    this.rateAmount = rateAmount;
+  public TimeRateSemaphore(int maxPermits, String rateAmount) {
+    this.rateAmount = Duration.parse(rateAmount);
     this.maxPermits = maxPermits;
     init();
   }
@@ -41,21 +113,27 @@ public class TimeRateSemaphore implements RateSemaphore {
   }
 
   private void init() {
-    resetThreshold = LocalDateTime.now();
     internalSemaphore = new Semaphore(maxPermits);
-    resetMSLock = new StampedLock();
+    executorService = Executors.newScheduledThreadPool(1);
+
+    releaseSemaphore = new ReleaseSemaphore(this);
   }
 
   @Override
   public void acquire() throws InterruptedException {
-    resetSemaphoreIfRequire();
+    resetBgReleaseThread();
     internalSemaphore.acquire();
   }
 
+
   @Override
   public void acquire(int permits) throws InterruptedException {
-    resetSemaphoreIfRequire();
+    resetBgReleaseThread();
     internalSemaphore.acquire(permits);
+  }
+
+  private void resetBgReleaseThread() {
+    releaseSemaphore.startBgReleaseThreadIfRequire();
   }
 
   @Override
@@ -70,31 +148,39 @@ public class TimeRateSemaphore implements RateSemaphore {
 
   @Override
   public boolean tryAcquire() {
-    resetSemaphoreIfRequire();
+    resetBgReleaseThread();
     return internalSemaphore.tryAcquire();
   }
 
   @Override
   public boolean tryAcquire(int permits) {
-    resetSemaphoreIfRequire();
+    resetBgReleaseThread();
     return internalSemaphore.tryAcquire(permits);
   }
 
-  private void resetSemaphoreIfRequire() {
-    long stamp = resetMSLock.tryOptimisticRead();
-    LocalDateTime now = LocalDateTime.now();
-    if (now.isAfter(resetThreshold)) {
-      long writeStamp = resetMSLock.tryConvertToWriteLock(stamp);
-      if (0 == writeStamp) {
-        return;
-      }
-      stamp = writeStamp;
-      try {
-        resetThreshold = LocalDateTime.now().plus(rateAmount);
-      } finally {
-        resetMSLock.unlockWrite(stamp);
-      }
-    }
+  @Override
+  public void close() throws Exception {
+    releaseSemaphore.close();
   }
+
+  private void resetInternalSemaphore() {
+    LOGGER.debug("reset semaphore");
+    internalSemaphore.drainPermits();
+    internalSemaphore.release(maxPermits);
+  }
+
+  private void startSchedule() {
+    LOGGER.debug("start schedule exe");
+    executorService.schedule(
+      releaseSemaphore,
+      rateAmount.getSeconds(),
+      TimeUnit.SECONDS
+    );
+  }
+
+  private boolean hasSemaphoreRequireLastPeriod() {
+    return internalSemaphore.getQueueLength() > 0;
+  }
+
 
 }
