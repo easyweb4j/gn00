@@ -1,6 +1,9 @@
 package org.easyweb4j.concurrent.semaphore.impl;
 
 import java.time.Duration;
+import java.time.LocalDateTime;
+import java.time.ZoneId;
+import java.time.temporal.TemporalAmount;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.Semaphore;
@@ -91,12 +94,12 @@ public class TimeRateSemaphore implements RateSemaphore {
   private Semaphore internalSemaphore;
 
   private int maxPermits;
-  private Duration rateAmount;
+  private TemporalAmount rateAmount;
   private ScheduledExecutorService executorService;
   private ReleaseSemaphore releaseSemaphore;
 
-  public TimeRateSemaphore(int maxPermits, String rateAmount) {
-    this.rateAmount = Duration.parse(rateAmount);
+  public TimeRateSemaphore(int maxPermits, TemporalAmount temporalAmount) {
+    this.rateAmount = temporalAmount;
     this.maxPermits = maxPermits;
     init();
   }
@@ -171,10 +174,14 @@ public class TimeRateSemaphore implements RateSemaphore {
 
   private void startSchedule() {
     LOGGER.debug("start schedule exe");
+    long deadline = LocalDateTime.now().plus(rateAmount).atZone(ZoneId.systemDefault()).toInstant()
+      .toEpochMilli();
+    long now = LocalDateTime.now().atZone(ZoneId.systemDefault()).toInstant()
+      .toEpochMilli();
     executorService.schedule(
       releaseSemaphore,
-      rateAmount.getSeconds(),
-      TimeUnit.SECONDS
+      deadline - now,
+      TimeUnit.MILLISECONDS
     );
   }
 

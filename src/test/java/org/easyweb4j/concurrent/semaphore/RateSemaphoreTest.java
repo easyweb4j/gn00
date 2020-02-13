@@ -15,13 +15,13 @@ public class RateSemaphoreTest {
 
   private static final Logger LOGGER = LoggerFactory.getLogger(RateSemaphoreTest.class);
 
-  @Test
+  @Test(timeOut = 30_000)
   public void timeRateSemaphore() throws Exception {
     int threadSize = 20;
     int permits = 8;
     int seconds = 2;
     try (RateSemaphore rateSemaphore = Semaphores
-      .newRateSemaphore(permits, "PT2S")) {
+      .newRateSemaphoreDuration(permits, "PT2S")) {
 
       List<Thread> threads = new LinkedList<>();
       CyclicBarrier cyclicBarrier = new CyclicBarrier(threadSize);
@@ -97,4 +97,32 @@ public class RateSemaphoreTest {
     });
   }
 
+  @Test(timeOut = 30_000)
+  public void timeRateSemaphoreLongPeriod() throws Exception {
+    int threadSize = 20;
+    int permits = 40;
+    int seconds = 2;
+    try (RateSemaphore rateSemaphore = Semaphores
+      .newRateSemaphorePeriod(permits, "P2W1D")) {
+
+      List<Thread> threads = new LinkedList<>();
+      CyclicBarrier cyclicBarrier = new CyclicBarrier(threadSize);
+
+      long curMS = System.currentTimeMillis();
+      for (int i = 0; i < threadSize; i++) {
+        Thread t = newThread(rateSemaphore, cyclicBarrier, i);
+        threads.add(t);
+        t.start();
+      }
+
+      for (Thread t : threads) {
+        t.join();
+      }
+      long duration = System.currentTimeMillis() - curMS;
+
+      Assert.assertTrue(
+        duration < seconds * 1000, "use " + duration);
+    }
+
+  }
 }
