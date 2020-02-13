@@ -178,9 +178,10 @@ public class TimeRateSemaphore implements RateSemaphore {
       .toEpochMilli();
     long now = LocalDateTime.now().atZone(ZoneId.systemDefault()).toInstant()
       .toEpochMilli();
+    long delay = deadline - now;
     executorService.schedule(
       releaseSemaphore,
-      deadline - now,
+      delay > 0 ? delay : 0,
       TimeUnit.MILLISECONDS
     );
   }
