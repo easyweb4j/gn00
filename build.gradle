@@ -6,10 +6,13 @@ apply from: 'https://raw.githubusercontent.com/easyweb4j/gradle-gallery/master/b
 
 ext {
   logbackVersion = '1.2.3'
+  commonioVersion = '2.6'
 }
 
 dependencies {
   // https://mvnrepository.com/artifact/ch.qos.logback/logback-classic
-  testCompile group: 'ch.qos.logback', name: 'logback-classic', version: ${logbackVersion}
+  testImplementation group: 'ch.qos.logback', name: 'logback-classic', version: logbackVersion
+  // https://mvnrepository.com/artifact/commons-io/commons-io
+  testImplementation group: 'commons-io', name: 'commons-io', version: commonioVersion
 
 }
