@@ -1,6 +1,10 @@
 plugins {
   id 'java-library'
+  id 'maven-publish'
 }
+
+group = 'com.easyweb4j'
+version = theVersion
 
 apply from: 'https://raw.githubusercontent.com/easyweb4j/gradle-gallery/master/basic-java.gradle'
 
@@ -16,3 +20,13 @@ dependencies {
   testImplementation group: 'commons-io', name: 'commons-io', version: commonioVersion
 
 }
+
+
+publishing {
+  publications {
+    maven(MavenPublication) {
+      from components.java
+    }
+  }
+}
+

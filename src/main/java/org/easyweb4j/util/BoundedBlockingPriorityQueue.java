@@ -77,7 +77,7 @@ public class BoundedBlockingPriorityQueue<E> implements BlockingQueue<E> {
         if ((size + 1) > capacity) {
           throw new IllegalStateException();
         }
-        return new OptimisticReadSupplierResult(false, null);
+        return new OptimisticReadSupplierResult<>(false, null);
       },
 
       () -> {
@@ -92,7 +92,7 @@ public class BoundedBlockingPriorityQueue<E> implements BlockingQueue<E> {
   @Override
   public boolean offer(E e) {
     return opsThenWrite(
-      () -> new OptimisticReadSupplierResult((size + 1) > capacity, false),
+      () -> new OptimisticReadSupplierResult<>((size + 1) > capacity, false),
       () -> {
         size++;
         boolean res = queue.add(e);
@@ -445,6 +445,7 @@ public class BoundedBlockingPriorityQueue<E> implements BlockingQueue<E> {
   }
 
   @Override
+  @SuppressWarnings("unchecked")
   public Iterator<E> iterator() {
     Object[] arr = toArray();
 
